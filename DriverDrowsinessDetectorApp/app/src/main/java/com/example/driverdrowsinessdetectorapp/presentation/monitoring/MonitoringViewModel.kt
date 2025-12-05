@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.driverdrowsinessdetectorapp.domain.model.AlertLevel
 import com.example.driverdrowsinessdetectorapp.domain.model.MetricasSomnolencia
+import com.example.driverdrowsinessdetectorapp.domain.usecase.alert.TriggerAlertUseCase
 import com.example.driverdrowsinessdetectorapp.domain.usecase.monitoring.DetectDrowsinessUseCase
 import com.example.driverdrowsinessdetectorapp.domain.usecase.monitoring.ProcessFrameUseCase
 import com.example.driverdrowsinessdetectorapp.presentation.monitoring.ui.MonitoringUiState
@@ -25,6 +26,7 @@ import javax.inject.Inject
 class MonitoringViewModel @Inject constructor(
     private val processFrameUseCase: ProcessFrameUseCase,
     private val detectDrowsinessUseCase: DetectDrowsinessUseCase,
+    private val triggerAlertUseCase: TriggerAlertUseCase, 
     private val alarmUtil: AlarmUtil
 ) : ViewModel() {
 
@@ -32,9 +34,9 @@ class MonitoringViewModel @Inject constructor(
         private const val TAG = "MonitoringViewModel"
         private const val FRAME_SKIP_COUNT = 2
         
-        //  DURACIONES DE ALERTAS
+        // DURACIONES DE ALERTAS
         private const val CRITICAL_ALERT_DURATION_MS = 5000L  // 5 segundos
-        private const val WARNING_ALERT_DURATION_MS = 3000L   // 3 segundos
+        private const val WARNING_ALERT_DURATION_MS = 5000L   //  5 segundos 
     }
 
     private val _uiState = MutableStateFlow<MonitoringUiState>(MonitoringUiState.Idle)
@@ -47,11 +49,11 @@ class MonitoringViewModel @Inject constructor(
     private var frameCount = 0
     private var isProcessingFrame = false
     
-    //  Control de alertas MEJORADO
+    // Control de alertas
     private var activeAlertLevel: AlertLevel = AlertLevel.NORMAL
     private var alertStartTime: Long = 0
     private var alertTimerJob: Job? = null
-    private var lastCriticalAlertTime: Long = 0  //  Evitar spam de alertas
+    private var lastCriticalAlertTime: Long = 0
 
     fun startTrip() {
         viewModelScope.launch {
@@ -59,6 +61,7 @@ class MonitoringViewModel @Inject constructor(
             
             _uiState.value = MonitoringUiState.Starting
             detectDrowsinessUseCase.reset()
+            triggerAlertUseCase.reset()  
             
             delay(500)
             
@@ -81,6 +84,11 @@ class MonitoringViewModel @Inject constructor(
             
             startTimer()
             
+            //  Enviar estado inicial (NORMAL) al backend para encender LED verde
+            sendAlertToBackend(
+                MetricasSomnolencia.empty().copy(alertLevel = AlertLevel.NORMAL)
+            )
+            
             Log.d(TAG, "✅ Viaje iniciado")
         }
     }
@@ -102,7 +110,7 @@ class MonitoringViewModel @Inject constructor(
                 if (metrics != null) {
                     _currentMetrics.value = metrics
                     updateUiStateWithMetrics(metrics)
-                    handleAlertWithDuration(metrics)  
+                    handleAlertWithDuration(metrics)
                 }
                 
             } catch (e: Exception) {
@@ -127,20 +135,19 @@ class MonitoringViewModel @Inject constructor(
     }
 
     /**
-     * ✅ Manejo de alerta MEJORADO
+     * Manejo de alerta con envío al backend
      */
     private fun handleAlertWithDuration(metrics: MetricasSomnolencia) {
         val currentTime = System.currentTimeMillis()
         val newAlertLevel = metrics.alertLevel
         
-        //  Microsueño o Cabeceo
+        // Microsueño o Cabeceo (CRÍTICO)
         if (newAlertLevel == AlertLevel.CRITICAL) {
             val isMicrosleepOrNodding = metrics.isMicrosleep || metrics.isNodding
             
             if (isMicrosleepOrNodding) {
-                // ✅ Verificar si ya hay una alerta activa
+                // Verificar si ya hay una alerta activa
                 if (activeAlertLevel == AlertLevel.CRITICAL) {
-                    // Ya hay alerta activa, solo mantener
                     val elapsed = currentTime - alertStartTime
                     if (elapsed < CRITICAL_ALERT_DURATION_MS) {
                         Log.d(TAG, "⏱️ Alerta CRÍTICA activa: ${elapsed}ms / ${CRITICAL_ALERT_DURATION_MS}ms")
@@ -148,36 +155,36 @@ class MonitoringViewModel @Inject constructor(
                     return
                 }
                 
-                // ✅ Cooldown: No disparar otra alerta si pasaron menos de 2s desde la última
+                // Cooldown: No disparar otra alerta si pasaron menos de 2s desde la última
                 if (currentTime - lastCriticalAlertTime < 2000) {
                     Log.d(TAG, "⏳ Cooldown activo, ignorando nueva alerta")
                     return
                 }
                 
-                // ✅ NUEVA ALERTA CRÍTICA
+                // NUEVA ALERTA CRÍTICA
                 Log.w(TAG, "🔴🔴🔴 INICIANDO ALERTA CRÍTICA: ${if (metrics.isMicrosleep) "MICROSUEÑO" else "CABECEO"} 🔴🔴🔴")
-                startAlert(AlertLevel.CRITICAL)
+                startAlert(AlertLevel.CRITICAL, metrics)
                 lastCriticalAlertTime = currentTime
                 return
             }
         }
         
-        // ✅ ADVERTENCIAS (MEDIUM/HIGH)
+        // ADVERTENCIAS (MEDIUM/HIGH)
         if (newAlertLevel == AlertLevel.HIGH || newAlertLevel == AlertLevel.MEDIUM) {
             if (activeAlertLevel == AlertLevel.NORMAL) {
-                startAlert(newAlertLevel)
+                startAlert(newAlertLevel, metrics)
             }
             return
         }
         
-        // ✅ NORMAL: Verificar si la alerta actual debe continuar
+        // NORMAL: Verificar si la alerta actual debe continuar
         if (newAlertLevel == AlertLevel.NORMAL && activeAlertLevel != AlertLevel.NORMAL) {
             val elapsedTime = currentTime - alertStartTime
             val requiredDuration = getAlertDuration(activeAlertLevel)
             
             if (elapsedTime >= requiredDuration) {
                 Log.d(TAG, "✅ Alerta completada: ${elapsedTime}ms")
-                stopAlert()
+                stopAlert(metrics)
             } else {
                 Log.d(TAG, "⏱️ Manteniendo alerta: ${elapsedTime}ms / ${requiredDuration}ms")
             }
@@ -185,17 +192,20 @@ class MonitoringViewModel @Inject constructor(
     }
 
     /**
-     * ✅ Iniciar alerta con temporizador
+     * Iniciar alerta con temporizador y envío al backend
      */
-    private fun startAlert(level: AlertLevel) {
+    private fun startAlert(level: AlertLevel, metrics: MetricasSomnolencia) {
         // Cancelar temporizador anterior
         alertTimerJob?.cancel()
         
         activeAlertLevel = level
         alertStartTime = System.currentTimeMillis()
         
-        // ✅ Reproducir alarma INMEDIATAMENTE
+        // Reproducir alarma LOCAL inmediatamente
         alarmUtil.playAlarm(level)
+        
+        // 🆕 ENVIAR ALERTA AL BACKEND (Sirena Tuya + ESP32 LEDs)
+        sendAlertToBackend(metrics)
         
         val duration = getAlertDuration(level)
         val emoji = when(level) {
@@ -207,11 +217,11 @@ class MonitoringViewModel @Inject constructor(
         
         Log.w(TAG, "$emoji ALERTA ${level.name} INICIADA (duración: ${duration}ms)")
         
-        // ✅ Programar detención automática después de la duración
+        // Programar detención automática después de la duración
         alertTimerJob = viewModelScope.launch {
             delay(duration)
             Log.d(TAG, "⏰ Temporizador de alerta expirado")
-            stopAlert()
+            stopAlert(metrics)
         }
         
         // Actualizar UI
@@ -222,13 +232,18 @@ class MonitoringViewModel @Inject constructor(
     }
 
     /**
-     * ✅ Detener alerta
+     * Detener alerta y notificar al backend (LED verde)
      */
-    private fun stopAlert() {
+    private fun stopAlert(metrics: MetricasSomnolencia?) {
         alertTimerJob?.cancel()
         alarmUtil.stopAlarm()
         activeAlertLevel = AlertLevel.NORMAL
         alertStartTime = 0
+        
+        // 🆕 ENVIAR ESTADO NORMAL AL BACKEND (LED verde)
+        val normalMetrics = metrics?.copy(alertLevel = AlertLevel.NORMAL)
+            ?: MetricasSomnolencia.empty().copy(alertLevel = AlertLevel.NORMAL)
+        sendAlertToBackend(normalMetrics)
         
         // Actualizar UI
         val currentState = _uiState.value
@@ -238,7 +253,39 @@ class MonitoringViewModel @Inject constructor(
     }
 
     /**
-     * ✅ Obtener duración según nivel
+     * 🆕 ENVIAR ALERTA AL BACKEND
+     * El backend activará:
+     * - Sirena Tuya (solo para CRITICAL)
+     * - ESP32 LEDs (rojo, amarillo, verde según nivel)
+     */
+    private fun sendAlertToBackend(metrics: MetricasSomnolencia) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val sessionId = sessionStartTime.toString()
+                
+                Log.d(TAG, "📡 Enviando alerta al backend: ${metrics.alertLevel} - ${metrics.alertType}")
+                
+                val success = triggerAlertUseCase(
+                    metrics = metrics,
+                    userId = null,  // Opcional: puedes obtener del PreferencesManager
+                    sessionId = sessionId
+                )
+                
+                if (success) {
+                    Log.d(TAG, "✅ Backend notificado - IoT activado")
+                } else {
+                    Log.w(TAG, "⚠️ No se envió alerta (cooldown o error)")
+                }
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Error enviando alerta al backend: ${e.message}", e)
+                // No fallar silenciosamente - la alarma local ya está sonando
+            }
+        }
+    }
+
+    /**
+     * Obtener duración según nivel
      */
     private fun getAlertDuration(level: AlertLevel): Long {
         return when (level) {
@@ -270,7 +317,7 @@ class MonitoringViewModel @Inject constructor(
                     sessionId = currentState.sessionId,
                     duration = currentState.duration
                 )
-                stopAlert()
+                stopAlert(null)
                 Log.d(TAG, "⏸️ Viaje pausado")
             }
         }
@@ -290,6 +337,12 @@ class MonitoringViewModel @Inject constructor(
                     gpsEnabled = true,
                     isProcessing = false
                 )
+                
+                // 🆕 Enviar estado NORMAL al reanudar
+                sendAlertToBackend(
+                    MetricasSomnolencia.empty().copy(alertLevel = AlertLevel.NORMAL)
+                )
+                
                 Log.d(TAG, "▶️ Viaje reanudado")
             }
         }
@@ -297,8 +350,9 @@ class MonitoringViewModel @Inject constructor(
 
     fun stopTrip() {
         viewModelScope.launch {
-            stopAlert()
+            stopAlert(null)
             detectDrowsinessUseCase.reset()
+            triggerAlertUseCase.reset()  // 🆕 Resetear
             _uiState.value = MonitoringUiState.Idle
             _currentMetrics.value = null
             Log.d(TAG, "⏹️ Viaje finalizado")
@@ -329,7 +383,7 @@ class MonitoringViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
-        stopAlert()
+        stopAlert(null)
         Log.d(TAG, "🧹 ViewModel cleared")
     }
 }

@@ -77,21 +77,21 @@ class AlarmUtil @Inject constructor(
             setMaxVolume()
             
             // Reproducir alarma_sonora.mp3 en loop
-            mediaPlayer?.release()
-            mediaPlayer = MediaPlayer.create(context, R.raw.alarma_sonora).apply {
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .setUsage(AudioAttributes.USAGE_ALARM)
-                        .build()
-                )
-                isLooping = true  // ← Repetir hasta que se detenga manualmente
-                setOnErrorListener { _, what, extra ->
-                    Log.e(TAG, "❌ Error MediaPlayer: what=$what, extra=$extra")
-                    false
-                }
-                start()
-            }
+            // mediaPlayer?.release()
+            // mediaPlayer = MediaPlayer.create(context, R.raw.alarma_sonora).apply {
+            //     setAudioAttributes(
+            //         AudioAttributes.Builder()
+            //             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            //             .setUsage(AudioAttributes.USAGE_ALARM)
+            //             .build()
+            //     )
+            //     isLooping = true  // ← Repetir hasta que se detenga manualmente
+            //     setOnErrorListener { _, what, extra ->
+            //         Log.e(TAG, "❌ Error MediaPlayer: what=$what, extra=$extra")
+            //         false
+            //     }
+            //     start()
+            // }
             
             // Vibrar continuamente
             vibrateContinuous()

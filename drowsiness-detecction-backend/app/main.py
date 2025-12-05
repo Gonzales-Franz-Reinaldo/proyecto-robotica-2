@@ -4,7 +4,8 @@ from fastapi.openapi.utils import get_openapi
 
 from app.core.config import settings
 from app.core.middleware import setup_middlewares
-from app.api.v1.routers import auth, empresas, users, viajes
+from app.api.v1.routers import auth, users
+from app.api.v1.routers import alerts  # 🆕 Agregar import
 
 # Crear aplicación FastAPI
 app = FastAPI(
@@ -34,42 +35,7 @@ app = FastAPI(
     3. **Autorizar**: Click en 🔓 **"Authorize"** (arriba a la derecha)
        - Pegar el token
        - Click "Authorize"
-    
-    4. **Usar endpoints**: Ahora tienes acceso a todos los endpoints según tu rol
-    
-    ---
-    
-    ### Pasos para usar en Postman:
-    
-    1. **Login**: `POST http://localhost:8000/api/v1/auth/login`
-       - Headers: `Content-Type: application/json`
-       - Body (raw JSON):
-         ```json
-         {
-             "username": "admin",
-             "password": "admin123"
-         }
-         ```
-    
-    2. **Copiar token**: Copiar el `access_token` de la respuesta
-    
-    3. **Configurar auth en requests**:
-       - Tab `Authorization`
-       - Type: `Bearer Token`
-       - Token: Pegar el `access_token`
-    
-    ---
-    
-    ## 📚 Características
-    
-    * **Autenticación JWT** - Tokens de acceso (30 min) y refresh (7 días)
-    * **Control de Roles** - Admin con permisos completos, Chofer con permisos limitados
-    * **CRUD Completo** - Gestión de choferes y empresas (solo admin)
-    * **Monitoreo en Tiempo Real** - WebSocket para detección de somnolencia (choferes)
-    * **Seguridad** - Bloqueo por intentos fallidos, tokens en blacklist
-    * **Documentación** - Swagger UI interactivo y ReDoc
-    
-    ---
+
     
     ## 🔗 Enlaces
     
@@ -137,17 +103,9 @@ app.include_router(
     tags=["👥 Gestión de Choferes (Solo Admin)"]
 )
 
-app.include_router(
-    empresas.router,
-    prefix=f"{settings.API_V1_PREFIX}/empresas",
-    tags=["🏢 Gestión de Empresas (Solo Admin)"]
-)
-
-app.include_router(
-    viajes.router,
-    prefix=f"{settings.API_V1_PREFIX}/viajes",
-    tags=["Gestión de Viajes (Solo Admin)"]
-)
+app.include_router(auth.router, prefix="/api/v1")
+app.include_router(users.router, prefix="/api/v1")
+app.include_router(alerts.router, prefix="/api/v1")  # 🆕 Agregar router
 
 
 

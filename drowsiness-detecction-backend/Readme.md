@@ -44,3 +44,15 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 Para que funcione el login con las credenciales válidas ejecutar el scrip test/regenerate_password
 
     python test/regenerate_passwords.py
+
+
+# PARA LA ALARMA SONORA
+# para detectar el dispositivo de alarma
+- pip install tinytuya
+- python -m tinytuya scan
+- python -m tinytuya wizard
+
+# Access ID/Client ID: 
+- senmpkvtvguawcydwrxr
+# Access Secret/Client Secret:
+- 0943972feb654916ae352330e866a442

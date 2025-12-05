@@ -26,12 +26,12 @@ class DetectDrowsinessUseCase @Inject constructor(
         private const val YAWN_THRESHOLD = 3
         private const val EYE_RUB_THRESHOLD = 3
         
-        //  Umbral para considerar boca "muy abierta" (bostezo en progreso)
-        private const val MOUTH_WIDE_OPEN_THRESHOLD = 0.5f  // MAR > 0.5 = boca muy abierta
+        // Umbral para considerar boca "muy abierta" (bostezo en progreso)
+        private const val MOUTH_WIDE_OPEN_THRESHOLD = 0.5f
     }
     
     /**
-     *  Versión que acepta landmarks nullables para manejar sin rostro
+     * Versión que acepta landmarks nullables para manejar sin rostro
      */
     operator fun invoke(
         faceLandmarks: List<NormalizedLandmark>?,
@@ -86,14 +86,14 @@ class DetectDrowsinessUseCase @Inject constructor(
             val mar = calculateMARUseCase(faceLandmarks)
             val handNearEyes = detectHandNearEyesUseCase(faceLandmarks, handLandmarks, handedness)
             
-            //  DETECTAR SI LA BOCA ESTÁ MUY ABIERTA (bostezo en progreso)
+            // DETECTAR SI LA BOCA ESTÁ MUY ABIERTA (bostezo en progreso)
             val isMouthWideOpen = mouthDistances.distanciaLabios > mouthDistances.distanciaMenton ||
                                   mar > MOUTH_WIDE_OPEN_THRESHOLD
             
             // DETECTAR EVENTOS
             val (isBlinking, blinkCount, _) = detectBlinkUseCase(eyeDistances)
             
-            //  PASAR el estado de boca abierta a microsueño
+            // PASAR el estado de boca abierta a microsueño
             val (isMicrosleep, microsleepCount, microsleepDurations) = detectMicrosleepUseCase(
                 eyeDistances = eyeDistances,
                 isMouthWideOpen = isMouthWideOpen  
@@ -102,22 +102,19 @@ class DetectDrowsinessUseCase @Inject constructor(
             val (isYawning, yawnCount, yawnDurations) = detectYawnUseCase(mouthDistances)
             val eyeRubResults = detectEyeRubUseCase(handNearEyes)
             
-            // DETERMINAR NIVEL DE ALERTA
-            val alertLevel = determineAlertLevel(
-                isMicrosleep = isMicrosleep,
-                isNodding = isNodding,
-                blinkCount = blinkCount,
-                yawnCount = yawnCount,
-                eyeRubFirstHandCount = eyeRubResults["MANO_IZQUIERDA"]?.second ?: 0,
-                eyeRubSecondHandCount = eyeRubResults["MANO_DERECHA"]?.second ?: 0
-            )
+            // 🆕 EXTRAER SI HAY FROTAMIENTO ACTIVO (evento individual)
+            val isEyeRubLeftActive = eyeRubResults["MANO_IZQUIERDA"]?.first ?: false
+            val isEyeRubRightActive = eyeRubResults["MANO_DERECHA"]?.first ?: false
+            val isEyeRubActive = isEyeRubLeftActive || isEyeRubRightActive
             
-            val alertType = determineAlertType(
+            // DETERMINAR NIVEL DE ALERTA (🆕 LÓGICA MEJORADA)
+            val (alertLevel, alertType) = determineAlertLevelAndType(
                 isMicrosleep = isMicrosleep,
                 isNodding = isNodding,
-                isYawning = isYawning,
-                yawnCount = yawnCount,
+                isYawning = isYawning,  // 🆕 Evento individual de bostezo
+                isEyeRubActive = isEyeRubActive,  // 🆕 Evento individual de frotamiento
                 blinkCount = blinkCount,
+                yawnCount = yawnCount,
                 eyeRubFirstHandCount = eyeRubResults["MANO_IZQUIERDA"]?.second ?: 0,
                 eyeRubSecondHandCount = eyeRubResults["MANO_DERECHA"]?.second ?: 0
             )
@@ -158,41 +155,71 @@ class DetectDrowsinessUseCase @Inject constructor(
         }
     }
     
-    private fun determineAlertLevel(
+    /**
+     * 🆕 LÓGICA MEJORADA: Determina nivel Y tipo de alerta
+     * 
+     * PRIORIDAD:
+     * 1. CRITICAL: Microsueño, Cabeceo
+     * 2. MEDIUM: Bostezo individual, Frotamiento individual (🆕 NUEVO)
+     * 3. HIGH: Muchos bostezos acumulados
+     * 4. MEDIUM: Parpadeo excesivo, muchos frotamientos acumulados
+     * 5. NORMAL: Sin alertas
+     */
+    private fun determineAlertLevelAndType(
         isMicrosleep: Boolean,
         isNodding: Boolean,
+        isYawning: Boolean,  // 🆕 Evento individual
+        isEyeRubActive: Boolean,  // 🆕 Evento individual
         blinkCount: Int,
         yawnCount: Int,
         eyeRubFirstHandCount: Int,
         eyeRubSecondHandCount: Int
-    ): AlertLevel {
-        return when {
-            isMicrosleep -> AlertLevel.CRITICAL
-            isNodding -> AlertLevel.CRITICAL
-            yawnCount > YAWN_THRESHOLD -> AlertLevel.HIGH
-            blinkCount > BLINK_THRESHOLD -> AlertLevel.MEDIUM
-            eyeRubFirstHandCount > EYE_RUB_THRESHOLD || eyeRubSecondHandCount > EYE_RUB_THRESHOLD -> AlertLevel.MEDIUM
-            else -> AlertLevel.NORMAL
+    ): Pair<AlertLevel, AlertType?> {
+        
+        // 1. CRÍTICO: Microsueño o Cabeceo
+        if (isMicrosleep) {
+            Log.w(TAG, "🔴 ALERTA CRÍTICA: MICROSUEÑO")
+            return Pair(AlertLevel.CRITICAL, AlertType.MICROSLEEP)
         }
-    }
-    
-    private fun determineAlertType(
-        isMicrosleep: Boolean,
-        isNodding: Boolean,
-        isYawning: Boolean,
-        yawnCount: Int,
-        blinkCount: Int,
-        eyeRubFirstHandCount: Int,
-        eyeRubSecondHandCount: Int
-    ): AlertType? {
-        return when {
-            isMicrosleep -> AlertType.MICROSLEEP
-            isNodding -> AlertType.HEAD_NODDING
-            isYawning && yawnCount > YAWN_THRESHOLD -> AlertType.YAWNING
-            eyeRubFirstHandCount > EYE_RUB_THRESHOLD || eyeRubSecondHandCount > EYE_RUB_THRESHOLD -> AlertType.EYE_RUB
-            blinkCount > BLINK_THRESHOLD -> AlertType.EXCESSIVE_BLINKING
-            else -> null
+        
+        if (isNodding) {
+            Log.w(TAG, "🔴 ALERTA CRÍTICA: CABECEO")
+            return Pair(AlertLevel.CRITICAL, AlertType.HEAD_NODDING)
         }
+        
+        // 2. 🆕 MEDIUM: Bostezo individual detectado (evento en progreso)
+        if (isYawning) {
+            Log.w(TAG, "🟡 ALERTA MEDIA: BOSTEZO DETECTADO")
+            return Pair(AlertLevel.MEDIUM, AlertType.YAWNING)
+        }
+        
+        // 3. 🆕 MEDIUM: Frotamiento de ojos individual (evento en progreso)
+        if (isEyeRubActive) {
+            Log.w(TAG, "🟡 ALERTA MEDIA: FROTAMIENTO DE OJOS DETECTADO")
+            return Pair(AlertLevel.MEDIUM, AlertType.EYE_RUB)
+        }
+        
+        // 4. HIGH: Muchos bostezos acumulados (umbral superado)
+        if (yawnCount > YAWN_THRESHOLD) {
+            Log.w(TAG, "🟠 ALERTA ALTA: $yawnCount bostezos (umbral: $YAWN_THRESHOLD)")
+            return Pair(AlertLevel.HIGH, AlertType.YAWNING)
+        }
+        
+        // 5. MEDIUM: Parpadeo excesivo
+        if (blinkCount > BLINK_THRESHOLD) {
+            Log.w(TAG, "🟡 ALERTA MEDIA: $blinkCount parpadeos (umbral: $BLINK_THRESHOLD)")
+            return Pair(AlertLevel.MEDIUM, AlertType.EXCESSIVE_BLINKING)
+        }
+        
+        // 6. MEDIUM: Muchos frotamientos acumulados
+        if (eyeRubFirstHandCount > EYE_RUB_THRESHOLD || eyeRubSecondHandCount > EYE_RUB_THRESHOLD) {
+            val totalRubs = eyeRubFirstHandCount + eyeRubSecondHandCount
+            Log.w(TAG, "🟡 ALERTA MEDIA: $totalRubs frotamientos (umbral: $EYE_RUB_THRESHOLD)")
+            return Pair(AlertLevel.MEDIUM, AlertType.EYE_RUB)
+        }
+        
+        // 7. NORMAL: Sin alertas
+        return Pair(AlertLevel.NORMAL, null)
     }
     
     fun reset() {

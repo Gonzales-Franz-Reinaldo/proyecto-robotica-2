@@ -58,6 +58,24 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     ENVIRONMENT: str = "development"
     
+    # ============================================
+    # IoT Configuration - Tuya Siren
+    # ============================================
+    TUYA_DEVICE_ID: str = ""
+    TUYA_IP_ADDRESS: str = ""
+    TUYA_LOCAL_KEY: str = ""
+    TUYA_DEVICE_VERSION: str = "3.5"
+    TUYA_SIREN_DPS: int = 104
+    TUYA_SIREN_DURATION: int = 5  # segundos
+    TUYA_ENABLED: bool = True
+    
+    # ============================================
+    # IoT Configuration - ESP32 Serial
+    # ============================================
+    ESP32_SERIAL_PORT: str = "/dev/ttyUSB0"
+    ESP32_BAUD_RATE: int = 115200
+    ESP32_ENABLED: bool = True
+    
     class Config:
         env_file = ".env"
         case_sensitive = True
