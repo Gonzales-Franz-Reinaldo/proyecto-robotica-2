@@ -1,0 +1,45 @@
+<resources>
+    <string name="app_name">DrowsyAlert</string>
+    
+    <!-- Login -->
+    <string name="login_title">Iniciar Sesión</string>
+    <string name="login_dni">DNI / Código de Chofer</string>
+    <string name="login_password">Contraseña</string>
+    <string name="login_button">Ingresar</string>
+    <string name="login_error">Credenciales incorrectas</string>
+    
+    <!-- Dashboard -->
+    <string name="dashboard_welcome">Bienvenido, %s</string>
+    <string name="dashboard_start_trip">Comenzar Viaje</string>
+    <string name="dashboard_stats_today">Estadísticas de Hoy</string>
+
+    <!-- Monitoring Screen -->
+    <string name="monitoring_title">Monitoreo Activo</string>
+    <string name="monitoring_start">Comenzar Viaje</string>
+    <string name="monitoring_pause">Pausar</string>
+    <string name="monitoring_resume">Reanudar</string>
+    <string name="monitoring_stop">Finalizar Viaje</string>
+
+    <!-- Alerts -->
+    <string name="alert_microsleep">¡Microsueño detectado!</string>
+    <string name="alert_yawn">Bostezo detectado</string>
+    <string name="alert_blink">Parpadeo excesivo</string>
+    <string name="alert_head_drop">Cabeceo detectado</string>
+    
+    <!-- Settings -->
+    <string name="settings_title">Configuración</string>
+    <string name="settings_sensitivity">Sensibilidad de Detección</string>
+    <string name="settings_sync_interval">Intervalo de Sincronización</string>
+    <string name="settings_logout">Cerrar Sesión</string>
+    
+    <!-- Permissions -->
+    <string name="permission_camera_required">Permiso de cámara requerido</string>
+    <string name="permission_location_required">Permiso de ubicación requerido</string>
+    <string name="permission_notification_required">Permiso de notificaciones requerido</string>
+
+
+    <!-- Errors -->
+    <string name="error_network">Sin conexión a internet</string>
+    <string name="error_camera">No se pudo acceder a la cámara</string>
+    <string name="error_gps">GPS no disponible</string>
+</resources>
